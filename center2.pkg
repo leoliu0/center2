@@ -1,0 +1,22 @@
+v 3
+d center2: fast replacement for center (Rust plugin)
+d
+d center2 centers (or standardizes) variables, optionally by group, with the results and messages
+d of center by Ben Jann (SSC). As in Stata's destring and tostring, replace changes variables in
+d place (center's inplace) and force overwrites existing variables (center's replace). It adds by()
+d for grouping unsorted data without sorting, and threads(). The computation is a compiled Rust
+d plugin (Linux, macOS, Windows).
+d
+d Author: Leo Liu, auleo.liu@gmail.com
+d License: MIT
+d Distribution-Date: 20261015
+f center2.ado
+f center2.sthlp
+g LINUX64 center2.linux64.plugin center2.plugin
+g LINUX64P center2.linux64.plugin center2.plugin
+g MACARM64 center2.macos-universal.plugin center2.plugin
+g OSX.ARM64 center2.macos-universal.plugin center2.plugin
+g MACINTEL64 center2.macos-universal.plugin center2.plugin
+g OSX.X8664 center2.macos-universal.plugin center2.plugin
+g WIN64 center2.win64.plugin center2.plugin
+h center2.plugin
