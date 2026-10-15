@@ -16,14 +16,16 @@ program center2, byable(onecall)
     local c2_plugver
     capture plugin call _center2_plugin, version
     if _rc == 199 {
-        di as error "center2: could not load center2.plugin; reinstall center2"
+        di as error "center2: could not load center2.plugin; reinstall center2 with"
+        di as error `"  net install center2, from("https://leoliu0.github.io/center2") replace"'
         exit 601
     }
     else if _rc {
         exit _rc
     }
     if "`c2_plugver'" != "`c2_version'" {
-        di as error "center2: plugin version `c2_plugver' does not match ado version `c2_version'; reinstall center2"
+        di as error "center2: plugin version `c2_plugver' does not match ado version `c2_version'; reinstall center2 with"
+        di as error `"  net install center2, from("https://leoliu0.github.io/center2") replace"'
         exit 198
     }
 

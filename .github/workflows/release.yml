@@ -1,8 +1,9 @@
 name: release
 
 # Tag vX.Y.Z: builds and smoke-tests the plugin for Linux, macOS and Windows, assembles the Stata
-# net-install tree and zip, and publishes a GitHub Release with the zip. The repository is
-# private, so there is no gh-pages net-install site.
+# net-install tree and zip, publishes the tree at the root of the gh-pages branch (GitHub Pages:
+#   net install center2, from("https://leoliu0.github.io/center2")
+# ) and a GitHub Release with the zip.
 # Manual runs (workflow_dispatch) default to dry_run: everything is built and tested, nothing is
 # published. Publishing also requires a tag ref, so a branch run never publishes.
 on:
@@ -168,8 +169,20 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          name: stata-net-install
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
           name: stata-zip
           path: release
+
+      # The net-install files sit at the site root, so the from() URL is the bare Pages URL.
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./dist/stata
+          keep_files: false
 
       - uses: softprops/action-gh-release@v2
         with:
