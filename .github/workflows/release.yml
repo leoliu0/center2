@@ -1,0 +1,176 @@
+name: release
+
+# Tag vX.Y.Z: builds and smoke-tests the plugin for Linux, macOS and Windows, assembles the Stata
+# net-install tree and zip, and publishes a GitHub Release with the zip. The repository is
+# private, so there is no gh-pages net-install site.
+# Manual runs (workflow_dispatch) default to dry_run: everything is built and tested, nothing is
+# published. Publishing also requires a tag ref, so a branch run never publishes.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and smoke-test every artifact without publishing anything
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag, Cargo and ado versions agree
+        id: check
+        run: |
+          version=$(sh scripts/check-versions.sh ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }})
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release version $version"
+
+  linux:
+    needs: version
+    runs-on: ubuntu-24.04
+    container: quay.io/pypa/manylinux_2_28_x86_64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+
+      - name: Build
+        run: |
+          . "$HOME/.cargo/env"
+          cargo build --release
+          cp target/release/libcenter2.so center2.linux64.plugin
+
+      - name: glibc floor (<= 2.28)
+        run: |
+          max=$(objdump -T center2.linux64.plugin | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+          echo "highest glibc symbol: $max"
+          test "$(printf '%s\nGLIBC_2.28\n' "$max" | sort -V | tail -1)" = "GLIBC_2.28"
+
+      - name: Mock host
+        run: |
+          cc -O2 -DSYSTEM=OPUNIX -Ic tests/mockhost/mockhost.c -ldl -lm -o target/mockhost
+          target/mockhost ./center2.linux64.plugin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin-linux
+          path: center2.linux64.plugin
+
+  macos:
+    needs: version
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Build universal plugin
+        run: |
+          MACOSX_DEPLOYMENT_TARGET=11.0 cargo build --release --target aarch64-apple-darwin
+          MACOSX_DEPLOYMENT_TARGET=10.13 cargo build --release --target x86_64-apple-darwin
+          lipo -create -output center2.macos-universal.plugin \
+            target/aarch64-apple-darwin/release/libcenter2.dylib \
+            target/x86_64-apple-darwin/release/libcenter2.dylib
+          codesign --force -s - center2.macos-universal.plugin
+          lipo -info center2.macos-universal.plugin
+
+      - name: Mock host (arm64)
+        run: |
+          mkdir -p target
+          cc -O2 -DSYSTEM=OPUNIX -Ic tests/mockhost/mockhost.c -o target/mockhost
+          target/mockhost ./center2.macos-universal.plugin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin-macos
+          path: center2.macos-universal.plugin
+
+  windows:
+    needs: version
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        shell: bash
+        run: |
+          cargo build --release --target x86_64-pc-windows-msvc
+          cp target/x86_64-pc-windows-msvc/release/center2.dll center2.win64.plugin
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Mock host
+        shell: cmd
+        run: |
+          cl /nologo /O2 /DSYSTEM=STWIN32 /Ic tests\mockhost\mockhost.c /Fe:target\mockhost.exe
+          target\mockhost.exe center2.win64.plugin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin-windows
+          path: center2.win64.plugin
+
+  stata-dist:
+    needs: [version, linux, macos, windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: plugin-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Assemble net-install tree
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir -p dist/stata
+          cp stata/center2.ado stata/center2.sthlp stata/stata.toc dist/stata/
+          sed "s/^d Distribution-Date: .*/d Distribution-Date: $(date -u +%Y%m%d)/" stata/center2.pkg > dist/stata/center2.pkg
+          cp artifacts/center2.linux64.plugin artifacts/center2.macos-universal.plugin artifacts/center2.win64.plugin dist/stata/
+          ls -l dist/stata
+          (cd dist && zip -r "../center2-v${VERSION}-stata.zip" stata)
+          unzip -l "center2-v${VERSION}-stata.zip" | grep -c -E 'center2\.(linux64|macos-universal|win64)\.plugin$' | grep -qx 3
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stata-net-install
+          path: dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stata-zip
+          path: center2-v${{ needs.version.outputs.version }}-stata.zip
+
+  publish:
+    needs: [version, stata-dist]
+    if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.dry_run == false)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: stata-zip
+          path: release
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*

@@ -1,0 +1,81 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            targets: ""
+          - os: macos-15
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - os: windows-2025
+            targets: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: Rust tests
+        run: cargo test --release
+
+      - name: Build plugin
+        shell: bash
+        run: scripts/build_plugin.sh
+
+      - name: Exported symbols (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          nm -D --defined-only stata/center2.plugin | awk '{print $3}' | grep -v '^$' | sort > target/exports.txt
+          cat target/exports.txt
+          grep -qx pginit target/exports.txt
+          grep -qx stata_call target/exports.txt
+          test "$(wc -l < target/exports.txt)" -eq 2
+
+      - name: center2.pkg lists every ado and help file (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          diff <(cd stata && ls *.ado *.sthlp | sort) <(awk '$1 == "f" {print $2}' stata/center2.pkg | sort)
+
+      - name: Cargo and ado versions agree (Linux)
+        if: runner.os == 'Linux'
+        run: sh scripts/check-versions.sh
+
+      - name: Mock host (Linux, macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cc -O2 -DSYSTEM=OPUNIX -Ic tests/mockhost/mockhost.c -ldl -lm -o target/mockhost
+          target/mockhost stata/center2.plugin
+
+      - name: MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Mock host (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          cl /nologo /O2 /DSYSTEM=STWIN32 /Ic tests\mockhost\mockhost.c /Fe:target\mockhost.exe
+          target\mockhost.exe stata\center2.plugin

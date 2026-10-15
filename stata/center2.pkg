@@ -1,0 +1,20 @@
+v 3
+d center2: fast drop-in replacement for center (Rust plugin)
+d
+d center2 centers (or standardizes) variables, optionally by group, with the syntax, options,
+d results and messages of center by Ben Jann (SSC). It adds by() for grouping unsorted data
+d without sorting and threads(). The computation is a compiled Rust plugin (Linux, macOS, Windows).
+d
+d Author: Leo Liu, auleo.liu@gmail.com
+d License: MIT
+d Distribution-Date: 20261015
+f center2.ado
+f center2.sthlp
+g LINUX64 center2.linux64.plugin center2.plugin
+g LINUX64P center2.linux64.plugin center2.plugin
+g MACARM64 center2.macos-universal.plugin center2.plugin
+g OSX.ARM64 center2.macos-universal.plugin center2.plugin
+g MACINTEL64 center2.macos-universal.plugin center2.plugin
+g OSX.X8664 center2.macos-universal.plugin center2.plugin
+g WIN64 center2.win64.plugin center2.plugin
+h center2.plugin

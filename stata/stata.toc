@@ -1,0 +1,3 @@
+v 3
+d center2 -- fast drop-in replacement for center (Rust plugin)
+p center2 center or standardize variables, by group, in a compiled plugin
