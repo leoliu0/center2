@@ -8,10 +8,10 @@ parallel and never sorts.
 ## Install
 
 ```stata
-net install center2, from("https://leoliu0.github.io/center2")
+net install center2, from(https://leoliu0.github.io/center2)
 ```
 
-Update with `net install center2, from("https://leoliu0.github.io/center2") replace`. Then see `help center2`.
+Update with `ado update center2, update`. Then see `help center2`.
 
 ## Use
 
