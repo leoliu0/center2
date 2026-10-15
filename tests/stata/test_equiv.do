@@ -5,6 +5,7 @@
 * before subtracting it, an absolute error up to |mean|*2^-24; group means here reach ~60
 * (xl under by g s:, 30-obs groups), hence 1e-5.
 * No -in- with inplace: center applies it after its internal sort (see help center2).
+* Specs are in center's syntax; c2_tospec2 renames the options for center2 (inplace -> replace).
 version 16
 clear all
 set more off
@@ -18,7 +19,8 @@ program c2_equiv
     frame copy base fa
     frame copy base fb
     frame fa: quietly `byp' center `spec' `dbl'
-    frame fb: quietly `byp' center2 `spec' `dbl'
+    c2_tospec2 `spec'
+    frame fb: quietly `byp' center2 `spec2' `dbl'
     local tol = cond("`dbl'"!="", 1e-12, 1e-5)
     c2_cmpframes fa fb, tol(`tol') what(`"`byp' center `spec' `dbl'"')
 end

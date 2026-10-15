@@ -1,7 +1,8 @@
 * test_semantics.do -- center2 behavior beyond plain equivalence with center: by() on unsorted
-* data, determinism across thread counts, reuse of existing targets under replace, aliasing,
-* sort markers, in with inplace, messages, the help examples, more than 32 variables (several
-* plugin batches) and empty samples.
+* data, determinism across thread counts, reuse of existing targets under force, aliasing,
+* sort markers, in with replace (in place), messages, the help examples, more than 32 variables
+* (several plugin batches) and empty samples. Specs passed to both commands are in center's
+* syntax; c2_tospec2 renames the options for center2 (replace -> force, inplace -> replace).
 version 16
 clear all
 set more off
@@ -20,18 +21,20 @@ frame copy default base
 
 capture program drop c2_byeq
 program c2_byeq
-    * aspec: the center side (bysort keys: center aspec), by default spec
+    * spec: center's syntax for both sides; aspec: the center side if different
+    * (bysort keys: center aspec)
     args keys spec aspec
     if `"`aspec'"' == "" {
         local aspec `"`spec'"'
     }
+    c2_tospec2 `spec'
     capture frame drop fa
     capture frame drop fb
     frame copy base fa
     frame copy base fb
     frame fa: quietly bysort `keys': center `aspec' double
     frame fb {
-        quietly center2 `spec' by(`keys') double
+        quietly center2 `spec2' by(`keys') double
         assert ord0 == _n
         if "`: sortedby'" != "u" {
             di as error "by(`keys') `spec': sortedby changed to `: sortedby'"
@@ -78,11 +81,11 @@ end
 c2_det "by gbig: center2 x1 x2 [aw=w], standardize meansave sdsave double"
 c2_det "center2 x1 x2, by(s) standardize double"
 c2_det "center2 x1 x2 [iw=iw], standardize double"
-c2_det "center2 x1 x2 xf, inplace standardize"
+c2_det "center2 x1 x2 xf, replace standardize"
 di as txt "determinism ok"
 
 * ---------------------------------------------------------------------------------------------
-* replace: a float target is reused in place (keeps its position, looks new); a double target
+* force: a float target is reused in place (keeps its position, looks new); a double target
 * with float output, or a sort variable, is recreated at the end
 * ---------------------------------------------------------------------------------------------
 frame copy base r
@@ -99,7 +102,7 @@ frame r {
     quietly ds
     local vars `r(varlist)'
     local pos0 : list posof "c_x1" in vars
-    center2 x1, replace
+    center2 x1, force
     quietly ds
     local vars `r(varlist)'
     assert `: list posof "c_x1" in vars' == `pos0'
@@ -108,13 +111,13 @@ frame r {
     assert "`: value label c_x1'" == ""
     assert `"`: char c_x1[]'"' == ""
     assert `"`: variable label c_x1'"' == "first x (centered)"
-    center2 x1, replace nolabel
+    center2 x1, force nolabel
     assert `"`: variable label c_x1'"' == ""
 
     drop c_x1
     gen double c_x1 = 1
     order after, last
-    center2 x1, replace
+    center2 x1, force
     quietly ds
     assert word("`r(varlist)'", -1) == "c_x1"
     assert "`: type c_x1'" == "float" & c_x1 == f_x1
@@ -123,12 +126,12 @@ frame r {
     gen float c_x1 = -_n
     sort c_x1
     order after, last
-    center2 x1, replace
+    center2 x1, force
     quietly ds
     assert word("`r(varlist)'", -1) == "c_x1"
     assert "`: sortedby'" == "" & c_x1 == f_x1
 }
-di as txt "replace ok"
+di as txt "force ok"
 
 * ---------------------------------------------------------------------------------------------
 * aliasing: a variable may be a source and a reused target; values come from pre-command data
@@ -138,7 +141,7 @@ frame al {
     gen float c_x1 = x2
     gen double old = c_x1
     quietly center2 x1 old, prefix(e_) standardize
-    center2 x1 c_x1, replace standardize
+    center2 x1 c_x1, force standardize
     assert c_x1 == e_x1
     assert c_c_x1 == float(e_old)
 }
@@ -151,28 +154,29 @@ di as txt "aliasing ok"
 frame copy base so
 frame so {
     sort x1
-    center2 x1, inplace
+    center2 x1, replace
     assert "`: sortedby'" == ""
     sort g
     by g: center2 x2
     assert "`: sortedby'" == "g"
-    center2 x2 xf, by(gbig) inplace
+    center2 x2 xf, by(gbig) replace
     assert "`: sortedby'" == "g"
 }
 di as txt "sort markers ok"
 
 * ---------------------------------------------------------------------------------------------
-* inplace with in: only obs 1-100 change, using the mean of obs 1-100 (center gets this wrong)
+* replace (in place) with in: only obs 1-100 change, using the mean of obs 1-100 (center gets
+* this wrong)
 * ---------------------------------------------------------------------------------------------
 frame copy base ip
 frame ip {
     sort id
     summarize x1 in 1/100, meanonly
     gen double e = cond(_n <= 100, x1 - r(mean), x1)
-    center2 x1 in 1/100, inplace
+    center2 x1 in 1/100, replace
     assert x1 == e | (_n <= 100 & reldif(x1, e) < 1e-12)
 }
-di as txt "inplace with in ok"
+di as txt "replace with in ok"
 
 * ---------------------------------------------------------------------------------------------
 * messages equal center's
@@ -196,7 +200,8 @@ foreach spec in "x1 x2 xf, meansave sdsave standardize" "x1 xb, inplace meansave
     "x1, generate(z) meansave(mz)" {
     c2_msg "center `spec'"
     local ma "$C2_MSG"
-    c2_msg "center2 `spec'"
+    c2_tospec2 `spec'
+    c2_msg "center2 `spec2'"
     if `"`ma'"' != "$C2_MSG" | `"`ma'"' == "" {
         di as error `"messages differ: `ma' vs $C2_MSG"'
         exit 9
@@ -217,8 +222,9 @@ local i 0
 foreach ex in "center# mpg price weight" "center# mpg price weight, prefix(z_) standardize" ///
     "bysort rep78: center# mpg price weight, replace" "center# mpg, generate(mpg0)" {
     frame ha: `=subinstr("`ex'", "#", "", 1)'
-    frame hb: `=subinstr("`ex'", "#", "2", 1)'
-    * from the replace example on, center2 keeps reused variables in place
+    c2_tospec2 `=subinstr("`ex'", "#", "2", 1)'
+    frame hb: `spec2'
+    * from the replace (center2: force) example on, center2 keeps reused variables in place
     local order = cond(`++i' >= 3, "noordercheck", "")
     * bysort orders ties differently in each frame; align on make (unique)
     frame ha: sort make
@@ -230,7 +236,7 @@ di as txt "help examples ok"
 
 * ---------------------------------------------------------------------------------------------
 * more than 32 variables: several plugin batches; nothing is written in place, so even
-* replace and inplace give center's variable order
+* force and replace give center's variable order
 * ---------------------------------------------------------------------------------------------
 capture frame drop wide
 frame create wide
@@ -253,7 +259,8 @@ foreach spec in "v1-v40, standardize double meansave replace" "v1-v40, inplace s
         frame copy wide fa
         frame copy wide fb
         frame fa: quietly `byp' center `spec'
-        frame fb: quietly `byp' center2 `spec'
+        c2_tospec2 `spec'
+        frame fb: quietly `byp' center2 `spec2'
         c2_cmpframes fa fb, tol(1e-12) what(`"`byp' center `spec'"')
     }
 }

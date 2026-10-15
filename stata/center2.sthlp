@@ -13,11 +13,10 @@ help for {hi:center2}
     [{cmd:in} {it:range}]
     [,
     {cmdab:c:asewise}
-    {cmdab:i:nplace}
-    {bind:{ {cmdab:pre:fix(}{it:prefix}{cmd:)} | {cmdab:g:enerate(}{it:newvar}{cmd:)} }}
+    {bind:{ {cmdab:r:eplace} | {cmdab:pre:fix(}{it:prefix}{cmd:)} | {cmdab:g:enerate(}{it:newvar}{cmd:)} }}
     {cmdab:th:eta:(}{it:#}|{it:varname}{cmd:)}
     {cmdab:s:tandardize}
-    {cmdab:r:eplace}
+    {opt force}
     {cmdab:d:ouble}
     {cmdab:nol:abel}
     {cmdab:a:ddtolabel(}{it:string}{cmd:)}
@@ -36,10 +35,16 @@ help for {hi:center2}
 
 {title:Description}
 
-{p 4 4 2} {cmd:center2} is a drop-in replacement for {cmd:center} by Ben Jann
-(available from SSC). It has the same syntax, options, results and messages,
-and computes in a compiled plugin that reads and writes the data in parallel.
-It does not sort the data.
+{p 4 4 2} {cmd:center2} is a fast replacement for {cmd:center} by Ben Jann
+(available from SSC). It gives the same results and messages, and computes in
+a compiled plugin that reads and writes the data in parallel. It does not
+sort the data.
+
+{p 4 4 2} Its options are {cmd:center}'s, except two names, which follow
+Stata's convention (as in {helpb destring} and {helpb tostring}):
+{cmd:replace} changes the variables in place ({cmd:center}'s {cmd:inplace}),
+and {cmd:force} permits overwriting existing variables ({cmd:center}'s
+{cmd:replace}).
 
 {p 4 4 2} {cmd:center2} centers (or, optionally, standardizes) the
 variables in {it:varlist}. For each {it:varname} in {it:varlist}, a
@@ -86,13 +91,17 @@ all the nonmissing values for each variable.
 {p 4 8 2} {cmd:double} enforces storage type {cmd:double} for newly created
 variables.
 
+{p 4 8 2} {cmd:force} permits {cmd:center2} to overwrite existing variables.
+An existing variable that already has the storage type of the new variable
+(and is not a sort variable) is overwritten in place, so it keeps its position
+in the dataset; its display format, value label, characteristics and notes are
+reset as for a new variable. Otherwise it is dropped and created anew at the
+end of the dataset, as {cmd:center} does. ({cmd:center} calls this option
+{cmd:replace}.)
+
 {p 4 8 2} {cmd:generate(}{it:newvar}{cmd:)} specifies the name of the
 new variable to be created. Note that {cmd:center2} may only be applied to
 one variable at a time if {cmd:generate()} is specified.
-
-{p 4 8 2} {cmd:inplace} causes the variables to be centered in place. That is,
-the centered values will replace the original values without creating
-new variables.
 
 {p 4 8 2} {cmd:meansave}[{cmd:(}{it:prefix}{cmd:)}] saves
 variables containing the means. The new variables will be named
@@ -110,12 +119,10 @@ for the centered/standardized variables. The default prefix is {cmd:c_}, thus
 the new variables will be named {cmd:c_}{it:varname}. {cmd:prefix()}
 is not allowed if {cmd:generate()} is specified.
 
-{p 4 8 2} {cmd:replace} permits {cmd:center2} to overwrite existing variables.
-An existing variable that already has the storage type of the new variable
-(and is not a sort variable) is overwritten in place, so it keeps its position
-in the dataset; its display format, value label, characteristics and notes are
-reset as for a new variable. Otherwise it is dropped and created anew at the
-end of the dataset, as {cmd:center} does.
+{p 4 8 2} {cmd:replace} causes the variables to be centered in place. That is,
+the centered values will replace the original values without creating
+new variables. {cmd:prefix()} and {cmd:generate()} are not allowed with
+{cmd:replace}. ({cmd:center} calls this option {cmd:inplace}.)
 
 {p 4 8 2} {cmd:sdsave}[{cmd:(}{it:prefix}{cmd:)}] saves variables
 containing the standard deviations (allowed only if the {cmd:standardize} option is
@@ -141,26 +148,29 @@ number of threads. {cmd:threads(1)} runs fully serially.
 
 {title:Differences from center}
 
+{p 4 8 2} - Option names: {cmd:replace} is {cmd:center}'s {cmd:inplace}, and
+{cmd:force} is {cmd:center}'s {cmd:replace}.
+
 {p 4 8 2} - Means, standard deviations and results are computed in double
 precision; {cmd:center} rounds the mean and standard deviation to the storage
 type ({cmd:float} unless {cmd:double} is specified) before using them.
 Results agree within float precision.
 
-{p 4 8 2} - With {cmd:inplace}, {cmd:if} and {cmd:in} are evaluated once,
+{p 4 8 2} - With {cmd:replace}, {cmd:if} and {cmd:in} are evaluated once,
 before any variable is modified. ({cmd:center} applies {cmd:in} after sorting
 the data, and re-evaluates {cmd:if} after earlier variables were modified.)
 
 {p 4 8 2} - All input values are read before any variable is modified, so a
 variable may be both a source and a target, e.g.
-{cmd:center2 x c_x, replace}.
+{cmd:center2 x c_x, force}.
 
-{p 4 8 2} - Variables overwritten under {cmd:replace} may keep their position
-(see {cmd:replace}).
+{p 4 8 2} - Variables overwritten under {cmd:force} may keep their position
+(see {cmd:force}).
 
 {p 4 8 2} - Variables changed in place are written by the plugin, which does
 not clear the sort order; this is why sort variables and integer variables
-(which {cmd:replace} promotes to {cmd:float} or {cmd:double}) are changed
-through Stata's {cmd:replace}, as {cmd:center} does.
+(which Stata's {help replace} command promotes to {cmd:float} or {cmd:double})
+are changed through that command, as {cmd:center} does.
 
 
 {title:Examples}
@@ -171,9 +181,11 @@ through Stata's {cmd:replace}, as {cmd:center} does.
 
         . center2 mpg price weight, prefix(z_) standardize
 
-        . bysort rep78: center2 mpg price weight, replace
+        . bysort rep78: center2 mpg price weight, force
 
-        . center2 mpg price weight, by(rep78) replace
+        . center2 mpg price weight, by(rep78) force
+
+        . center2 price, replace standardize
 
         . center2 mpg, generate(mpg0)
         {txt}

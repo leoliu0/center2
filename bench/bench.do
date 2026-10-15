@@ -6,11 +6,11 @@
 * Floors (best of 3, also on fresh copies):
 * - add floor (generate scenarios): one nofill st_addvar of the same 5 output variables, the
 *   cost Stata charges any implementation for creating them;
-* - I/O floor t_io (inplace scenarios): plugin selftest, one parallel read of x1-x5 and one
+* - I/O floor t_io (in-place scenarios): plugin selftest, one parallel read of x1-x5 and one
 *   parallel write of 5 double variables.
 * The add floor varies by up to ~1 s between identical runs (page faults of Stata's dataset
 * relayout), more than G6's 0.4 s budget. So generate scenarios also time "center2 without adds"
-* (best of 3): the same command plus replace, with the 5 targets already present with the
+* (best of 3): the same command plus force, with the 5 targets already present with the
 * output type (created untimed), which center2 overwrites in place. That is center2's work
 * beyond creating variables, measured directly; a generate scenario is at its floor when it is
 * <= 0.4 s.
@@ -78,12 +78,12 @@ capture frame drop res
 frame create res str4 id str80 desc str8 kind double(tc t2 tf tn)
 capture program drop c2_scen
 program c2_scen
-    * <cmd> names the command center#: center runs it with # removed, center2 with # -> 2,
-    * unless <cmd2> gives center2's command. kind gen: floor = add floor of 5 <otype>
-    * variables; kind inplace: floor = t_io.
+    * <cmd> names the command center#: center runs it with # removed, center2 with # -> 2 and
+    * center's inplace renamed replace, unless <cmd2> gives center2's command. kind gen:
+    * floor = add floor of 5 <otype> variables; kind inplace: floor = t_io.
     args id fr kind otype cmd cmd2
     if `"`cmd2'"' == "" {
-        local cmd2 = subinstr(`"`cmd'"', "center#", "center2", 1)
+        local cmd2 = subinword(subinstr(`"`cmd'"', "center#", "center2", 1), "inplace", "replace", .)
     }
     local cmd = subinstr(`"`cmd'"', "center#", "center", 1)
     c2_time `fr' 1 `"`cmd'"'
@@ -95,7 +95,7 @@ program c2_scen
         c2_time `fr' 3 `"mata: (void) st_addvar("`otype'", "f":+strofreal(1..5), 1)"'
         local tf = r(t)
         local sep = cond(strpos(`"`cmd2'"', ","), " ", ", ")
-        c2_time `fr' 3 `"`cmd2'`sep'replace"' `"mata: (void) st_addvar("`otype'", "c_x":+strofreal(1..5), 1)"'
+        c2_time `fr' 3 `"`cmd2'`sep'force"' `"mata: (void) st_addvar("`otype'", "c_x":+strofreal(1..5), 1)"'
         local tn = r(t)
     }
     else {
@@ -132,7 +132,7 @@ c2_scen B4 D2 inplace . "center# x1-x5, inplace standardize"
 * ---------------------------------------------------------------------------------------------
 frame change res
 gen double speedup = tc / t2
-* at floor: generate when center2 without adds <= 0.4 s; inplace within 1.6 t_io (two reads, one write)
+* at floor: generate when center2 without adds <= 0.4 s; in place within 1.6 t_io (two reads, one write)
 gen byte atfloor = cond(kind == "gen", tn <= .4, t2 <= 1.6*tf)
 
 capture program drop c2_gate
@@ -212,8 +212,8 @@ file write `fh' "Data: D1 = 20M obs (long g with 100,000 groups, double x1-x5, u
     "D1u = D1 sorted by u; D2 = 5M obs, D1's variables plus 50 float z variables, sorted by g." _n _n
 file write `fh' "center runs once, center2 best of 3, each on a fresh frame copy (not timed). " ///
     "Floor: for generate scenarios, one nofill st_addvar of the same 5 output variables; " ///
-    "for inplace scenarios, t_io = one parallel read of x1-x5 plus one parallel write of 5 doubles. " ///
-    "center2 without adds (generate scenarios): the same command plus replace, with the 5 targets " ///
+    "for in-place scenarios, t_io = one parallel read of x1-x5 plus one parallel write of 5 doubles. " ///
+    "center2 without adds (generate scenarios): the same command plus force, with the 5 targets " ///
     "already present with the output type, so center2 overwrites them in place: its work beyond " ///
     "creating variables. The add floor varies by up to ~1 s between identical runs (page faults " ///
     "of Stata's dataset relayout), so center2 minus the add floor is noisy at the 0.4 s scale." _n _n
@@ -225,7 +225,7 @@ forvalues i = 1/`=_N' {
         `"`=cond(missing(tn[`i']), "", strtrim(string(tn[`i'], "%6.3f")))'"' " |" _n
 }
 file write `fh' _n "Gates (a failing gate is floor-bound when center2 without adds is <= 0.4 s for generate " ///
-    "scenarios, or center2 is within 1.6 t_io for inplace scenarios):" _n _n `fence' _n
+    "scenarios, or center2 is within 1.6 t_io for in-place scenarios):" _n _n `fence' _n
 foreach line of global C2_GATES {
     file write `fh' `"`line'"' _n
 }

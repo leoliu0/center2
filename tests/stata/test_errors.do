@@ -8,6 +8,7 @@ adopath ++ "../../stata"
 
 capture program drop c2_samerc
 program c2_samerc
+    * spec: center's syntax; c2_tospec2 renames the options for center2 (inplace -> replace)
     args spec
     capture frame drop fa
     capture frame drop fb
@@ -15,15 +16,16 @@ program c2_samerc
     frame copy base fb
     frame fa: capture center `spec'
     local rca = _rc
-    frame fb: capture center2 `spec'
+    c2_tospec2 `spec'
+    frame fb: capture center2 `spec2'
     local rcb = _rc
     if `rca' == 0 | `rca' != `rcb' {
-        di as error `"center `spec': rc `rca', center2 rc `rcb'"'
+        di as error `"center `spec': rc `rca', center2 `spec2': rc `rcb'"'
         exit 9
     }
     * center2 checks everything before it changes the data
-    c2_cmpframes base fb, tol(0) what(`"center2 `spec' (after error)"')
-    di as txt `"r(`rcb'): `spec'"'
+    c2_cmpframes base fb, tol(0) what(`"center2 `spec2' (after error)"')
+    di as txt `"r(`rcb'): `spec2'"'
 end
 
 capture program drop c2_rc198
@@ -72,6 +74,6 @@ c2_rc198 `"center2 x2, threads(-1)"'
 c2_rc198 `"center2 x2, theta(x1 x2)"'
 * plugin errors: the new outputs (incl. meansave) are dropped
 c2_rc198 `"center2 x2 xf, by(bl) meansave"'
-c2_rc198 `"center2 x2 xf, by(bl) inplace"'
+c2_rc198 `"center2 x2 xf, by(bl) replace"'
 
 di as result "TEST_ERRORS passed"

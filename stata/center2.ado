@@ -1,14 +1,16 @@
 *! version 0.1.0, Leo Liu, 15oct2026
-*! center2: fast drop-in replacement for -center- (Ben Jann, SSC), computed by a compiled plugin.
-*! Syntax, options, results and messages follow center 1.10; the plugin protocol is
-*! documented in src/spec.rs of the source repository.
+*! center2: fast replacement for -center- (Ben Jann, SSC), computed by a compiled plugin.
+*! Results and messages follow center 1.10. Options follow center's, except that, as in Stata's
+*! destring and tostring, replace changes the variables in place (center's inplace), and force
+*! overwrites existing variables (center's replace). The plugin protocol is documented in
+*! src/spec.rs of the source repository.
 program center2, byable(onecall)
     version 16
     local c2_version 0.1.0
     syntax varlist(numeric) [if] [in] [aw iw pw fw/] [, PREfix(string) /*
-        */ noLabel Addtolabel(string asis) Replace Double Standardize /*
+        */ noLabel Addtolabel(string asis) Replace FORCE Double Standardize /*
         */ MEANsave MEANsave2(string) SDsave SDsave2(string) Casewise /*
-        */ THeta(string) Generate(string) Inplace BY(varlist) THReads(integer 0) ]
+        */ THeta(string) Generate(string) BY(varlist) THReads(integer 0) ]
 
     /* plugin */
     local c2_plugver
@@ -25,14 +27,14 @@ program center2, byable(onecall)
         exit 198
     }
 
-    /* inplace, generate, prefix */
-    if "`inplace'"!="" {
+    /* replace (in place), generate, prefix */
+    if "`replace'"!="" {
         if `"`prefix'"'!="" {
-            di as error "prefix() not allowed with inplace"
+            di as error "prefix() not allowed with replace"
             exit 198
         }
         if `"`generate'"'!="" {
-            di as error "generate() not allowed with inplace"
+            di as error "generate() not allowed with replace"
             exit 198
         }
         local prefix
@@ -107,7 +109,7 @@ program center2, byable(onecall)
     }
 
     /* targets: T_<role><k> name, H_<role><k> new|reuse|recreate (role out, mean, sd).
-       An existing target (replace) is reused in place when it already has the output type
+       An existing target (force) is reused in place when it already has the output type
        and is not a sort variable; otherwise a new variable replaces it at the end. With more
        than 32 sources the plugin runs several batches, so nothing is written in place:
        a later batch could otherwise read a variable an earlier batch overwrote. */
@@ -115,7 +117,7 @@ program center2, byable(onecall)
     local sorted : sortedby
     local nsrc : word count `varlist'
     local onebatch = `nsrc' <= 32
-    local roles = cond("`inplace'"=="", "out", "") + cond("`meansave'"!="", " mean", "") /*
+    local roles = cond("`replace'"=="", "out", "") + cond("`meansave'"!="", " mean", "") /*
         */ + cond("`sdsave'"!="", " sd", "")
     local alltargets
     local k 0
@@ -135,7 +137,7 @@ program center2, byable(onecall)
             capture confirm new variable `t'
             if _rc {
                 capture confirm variable `t', exact
-                if _rc | "`replace'"=="" {
+                if _rc | "`force'"=="" {
                     di as error "`t' already defined or invalid name"
                     exit 110
                 }
@@ -144,9 +146,9 @@ program center2, byable(onecall)
                     local how reuse
                 }
             }
-            /* a repeated target, or (inplace) a target that is also modified as a source */
+            /* a repeated target, or (replace) a target that is also modified as a source */
             local insrc 0
-            if "`inplace'"!="" {
+            if "`replace'"!="" {
                 local insrc : list t in varlist
             }
             if `: list t in alltargets' | `insrc' {
@@ -243,10 +245,10 @@ program center2, byable(onecall)
     }
     local nkey : word count `keys'
 
-    /* inplace: observations written with missing outside the sample (ifin) */
+    /* replace (in place): observations written with missing outside the sample (ifin) */
     local ifin all
     local ifinvar
-    if "`inplace'"!="" & "`touse'"!="" {
+    if "`replace'"!="" & "`touse'"!="" {
         if "`weight'`casewise'"=="" {
             local ifin touse
         }
@@ -261,9 +263,10 @@ program center2, byable(onecall)
        call (per source: mean, sd, out, as center orders them). New targets get their final
        names: renaming a variable after adding double variables costs a dataset pass (0.3 s on
        20M obs). Recreated targets are tempvars, renamed after the old variable is dropped, so
-       the old one stays readable as an input. An inplace source is written directly when it is
-       float or double, not a sort variable, and the run is one batch; otherwise through a double
-       tempvar and a native replace afterwards (type promotion and sort marker as with center). */
+       the old one stays readable as an input. A source changed in place (replace) is written
+       directly when it is float or double, not a sort variable, and the run is one batch;
+       otherwise through a double tempvar and a native replace afterwards (type promotion and
+       sort marker as with center). */
     local addtypes
     local addnames
     local newnames
@@ -291,7 +294,7 @@ program center2, byable(onecall)
             local addtypes `addtypes' `otype'
             local addnames `addnames' `P_`role'`k''
         }
-        if "`inplace'"=="" {
+        if "`replace'"=="" {
             local fill `fill'a
         }
         else if inlist("`: type `name''", "float", "double") & !`: list name in sorted' & `onebatch' {
@@ -328,7 +331,7 @@ program center2, byable(onecall)
     }
     local newvars
     local modvars
-    local written = "`inplace'"!="" & `nsrc' > `: word count `slow''
+    local written = "`replace'"!="" & `nsrc' > `: word count `slow''
     local fmt = cond("`otype'"=="double", "%10.0g", "%9.0g")
 
     /* From adding the outputs to labeling them, Break is deferred (the values of nofill
@@ -349,7 +352,7 @@ program center2, byable(onecall)
             drop `newnames'
         }
         if !`rc' {
-            /* slow inplace sources */
+            /* sources changed in place through a tempvar (slow path) */
             local k 0
             foreach name of local varlist {
                 local ++k
@@ -361,7 +364,7 @@ program center2, byable(onecall)
             local k 0
             foreach name of local varlist {
                 local ++k
-                if "`inplace'"!="" {
+                if "`replace'"!="" {
                     local modvars `modvars' `name'
                 }
                 foreach role of local roles {
@@ -387,7 +390,7 @@ program center2, byable(onecall)
                 }
                 if "`label'"=="" {
                     local lab=substr(`"`lab`k''"',1,`llength')
-                    if "`inplace'"!="" {
+                    if "`replace'"!="" {
                         lab var `name' `"`lab'`addtolabel'"'
                     }
                     else {
